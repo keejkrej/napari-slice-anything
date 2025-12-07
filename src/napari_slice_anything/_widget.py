@@ -203,10 +203,11 @@ class SliceAnythingWidget(QWidget):
             new_name = f"{base_name}_{counter}"
             counter += 1
 
+        # Create new layer with all necessary properties preserved
         self.viewer.add_image(
             sliced_data,
             name=new_name,
-            colormap=self._current_layer.colormap.name,
+            rgb=False,  # Explicitly set to avoid confusion with multi-channel data
         )
 
     def _reset_sliders(self):
