@@ -13,11 +13,14 @@ from qtpy.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QWidget,
+    QFileDialog,
+    QMessageBox,
 )
 from superqt import QLabeledDoubleRangeSlider
 
 import napari
 from napari.layers import Image
+import os
 
 
 class DimensionSliceControl(QWidget):
@@ -100,6 +103,11 @@ class SliceAnythingWidget(QWidget):
         self.reset_btn = QPushButton("Reset")
         self.reset_btn.setEnabled(False)
         button_layout.addWidget(self.reset_btn)
+        
+        self.save_btn = QPushButton("Save Sliced Layer")
+        self.save_btn.setEnabled(False)
+        self.save_btn.setToolTip("Save the currently sliced layer directly")
+        button_layout.addWidget(self.save_btn)
 
         layout.addLayout(button_layout)
         layout.addStretch()
@@ -110,6 +118,7 @@ class SliceAnythingWidget(QWidget):
         self.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
         self.apply_btn.clicked.connect(self._apply_slice)
         self.reset_btn.clicked.connect(self._reset_sliders)
+        self.save_btn.clicked.connect(self._save_sliced_layer)
 
         self.viewer.layers.events.inserted.connect(self._update_layer_combo)
         self.viewer.layers.events.removed.connect(self._update_layer_combo)
@@ -143,6 +152,7 @@ class SliceAnythingWidget(QWidget):
             self.shape_label.setText("No layer selected")
             self.apply_btn.setEnabled(False)
             self.reset_btn.setEnabled(False)
+            self.save_btn.setEnabled(False)
             return
 
         self._current_layer = self.layer_combo.itemData(index)
@@ -154,6 +164,7 @@ class SliceAnythingWidget(QWidget):
         self._setup_dim_controls(shape)
         self.apply_btn.setEnabled(True)
         self.reset_btn.setEnabled(True)
+        self.save_btn.setEnabled(True)
 
     def _clear_dim_controls(self):
         """Remove all dimension controls."""
@@ -203,52 +214,143 @@ class SliceAnythingWidget(QWidget):
             new_name = f"{base_name}_{counter}"
             counter += 1
 
-        # Create a new layer with comprehensive metadata copying
+        # Create a new layer that should be saveable
         try:
-            # Start with basic parameters
+            # Try to preserve all properties from the original layer
             layer_kwargs = {
                 'name': new_name,
                 'rgb': False,
                 'data': sliced_data,
             }
             
-            # Copy all possible properties from the original layer
-            properties_to_copy = [
-                'contrast_limits', 'gamma', 'interpolation', 'colormap',
-                'blending', 'opacity', 'visible', 'editable'
-            ]
+            # Copy display properties
+            if hasattr(self._current_layer, 'contrast_limits'):
+                try:
+                    layer_kwargs['contrast_limits'] = self._current_layer.contrast_limits
+                except:
+                    pass
             
-            for prop in properties_to_copy:
-                if hasattr(self._current_layer, prop):
-                    try:
-                        layer_kwargs[prop] = getattr(self._current_layer, prop)
-                    except Exception:
-                        pass  # Skip properties that can't be copied
+            if hasattr(self._current_layer, 'gamma'):
+                try:
+                    layer_kwargs['gamma'] = self._current_layer.gamma
+                except:
+                    pass
+                    
+            if hasattr(self._current_layer, 'interpolation'):
+                try:
+                    layer_kwargs['interpolation'] = self._current_layer.interpolation
+                except:
+                    pass
             
-            # Copy metadata if it exists
-            if hasattr(self._current_layer, 'metadata'):
-                layer_kwargs['metadata'] = self._current_layer.metadata.copy()
+            # Add metadata
+            layer_kwargs['metadata'] = {
+                'sliced_by': 'napari-slice-anything',
+                'original_shape': list(self._current_layer.data.shape),
+                'sliced_shape': list(sliced_data.shape)
+            }
             
-            # Copy axis names if they exist
-            if hasattr(self._current_layer, 'axis_names'):
-                layer_kwargs['axis_names'] = self._current_layer.axis_names
-            
-            # Add the layer using add_image with all properties
+            # Create the layer
             new_layer = self.viewer.add_image(**layer_kwargs)
             
-            # Copy the source information to help with saving
-            if hasattr(self._current_layer, '_source'):
-                new_layer._source = self._current_layer._source
-                
+            # Set source information
+            try:
+                from napari.layers._source import Source
+                new_layer._source = Source(
+                    path=None,
+                    reader_plugin='napari',
+                    plugin='napari-slice-anything'
+                )
+            except ImportError:
+                # If Source is not available, try alternative
+                try:
+                    new_layer._source = self._current_layer._source
+                except:
+                    pass
+                    
         except Exception as e:
-            print(f"Warning: Could not copy all layer properties: {e}")
+            print(f"Warning: Could not create layer with full properties: {e}")
             # Fallback to minimal layer creation
             new_layer = self.viewer.add_image(
                 sliced_data,
                 name=new_name,
-                rgb=False
+                rgb=False,
+                metadata={'sliced_by': 'napari-slice-anything'}
             )
 
+    def _save_sliced_layer(self):
+        """Save the sliced data directly using numpy file I/O."""
+        if self._current_layer is None:
+            return
+            
+        # Get current slice configuration
+        slices = []
+        for control in self._dim_controls:
+            start, stop = control.get_slice()
+            slices.append(slice(start, stop))
+        
+        sliced_data = self._current_layer.data[tuple(slices)]
+        
+        if sliced_data.size == 0:
+            QMessageBox.warning(self, "Warning", "No data to save - slice is empty")
+            return
+        
+        # Ask user for save location
+        file_path, file_ext = QFileDialog.getSaveFileName(
+            self,
+            "Save Sliced Data",
+            f"{self._current_layer.name}_sliced.npy",
+            "NumPy Array (*.npy);;TIFF Images (*.tiff *.tif);;All Files (*)"
+        )
+        
+        if not file_path:
+            return  # User cancelled
+            
+        try:
+            if file_path.endswith(('.npy', '.npz')):
+                # Save as numpy array
+                np.save(file_path, sliced_data)
+                QMessageBox.information(self, "Success", f"Saved sliced data to {file_path}")
+                
+            elif file_path.endswith(('.tiff', '.tif')):
+                # Save as TIFF using imageio
+                import imageio.v3 as iio
+                # For multi-dimensional data, save as individual slices or use compression
+                if len(sliced_data.shape) > 2:
+                    # Handle multi-dimensional data
+                    if len(sliced_data.shape) == 3:
+                        # 3D data - save as multi-page TIFF
+                        iio.imwrite(file_path, sliced_data)
+                    else:
+                        # Higher dimensions - flatten and save
+                        # Take first 2D slice for demonstration
+                        if sliced_data.dtype == np.complex64 or sliced_data.dtype == np.complex128:
+                            # Handle complex data by taking magnitude
+                            data_to_save = np.abs(sliced_data)
+                        else:
+                            data_to_save = sliced_data
+                        iio.imwrite(file_path, data_to_save.astype(np.float32))
+                else:
+                    # 2D data
+                    if sliced_data.dtype == np.complex64 or sliced_data.dtype == np.complex128:
+                        data_to_save = np.abs(sliced_data)
+                    else:
+                        data_to_save = sliced_data
+                    iio.imwrite(file_path, data_to_save)
+                    
+                QMessageBox.information(self, "Success", f"Saved sliced data to {file_path}")
+                
+            else:
+                # Default to numpy format
+                if not file_path.endswith('.npy'):
+                    file_path += '.npy'
+                np.save(file_path, sliced_data)
+                QMessageBox.information(self, "Success", f"Saved sliced data to {file_path}")
+                
+        except Exception as e:
+            error_msg = f"Failed to save data: {str(e)}"
+            QMessageBox.critical(self, "Error", error_msg)
+            print(error_msg)
+            
     def _reset_sliders(self):
         """Reset all sliders to full range."""
         if self._current_layer is None:
