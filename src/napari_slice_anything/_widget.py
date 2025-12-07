@@ -3,7 +3,7 @@
 from typing import Optional
 
 import numpy as np
-from qtpy.QtCore import Qt, Signal
+from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QComboBox,
     QFormLayout,
@@ -11,108 +11,14 @@ from qtpy.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QSlider,
     QVBoxLayout,
     QWidget,
 )
+from superqt import QLabeledDoubleRangeSlider
 
 import napari
 from napari.layers import Image, Shapes
 from napari.layers.shapes._shapes_utils import create_box
-
-
-class SimpleRangeSlider(QWidget):
-    """A simple range slider using two standard QSliders."""
-    
-    valueChanged = Signal(tuple)
-    
-    def __init__(self, min_val=0, max_val=100, parent=None):
-        super().__init__(parent)
-        self._min_val = min_val
-        self._max_val = max_val
-        self._current_min = min_val
-        self._current_max = max_val
-        
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)
-        
-        # Value display
-        self.value_label = QLabel(f"{min_val}-{max_val}")
-        self.value_label.setMinimumWidth(60)
-        self.value_label.setMaximumWidth(80)
-        self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.value_label.setStyleSheet("""
-            QLabel {
-                border: 1px solid gray;
-                padding: 2px;
-                background: white;
-                font-weight: bold;
-                font-size: 10px;
-            }
-        """)
-        
-        # Range slider using two QSliders
-        self.min_slider = QSlider(Qt.Orientation.Horizontal)
-        self.max_slider = QSlider(Qt.Orientation.Horizontal)
-        
-        for slider in [self.min_slider, self.max_slider]:
-            slider.setRange(min_val, max_val)
-            slider.valueChanged.connect(self._on_value_changed)
-        
-        self.min_slider.setValue(min_val)
-        self.max_slider.setValue(max_val)
-        
-        layout.addWidget(self.value_label)
-        layout.addWidget(self.min_slider)
-        layout.addWidget(self.max_slider)
-        
-        self._update_display()
-        
-    def _on_value_changed(self):
-        """Handle value changes."""
-        min_val = self.min_slider.value()
-        max_val = self.max_slider.value()
-        
-        # Ensure min <= max
-        if min_val > max_val:
-            if self.sender() == self.min_slider:
-                self.max_slider.setValue(min_val)
-                max_val = min_val
-            else:
-                self.min_slider.setValue(max_val)
-                min_val = max_val
-        
-        self._current_min = min_val
-        self._current_max = max_val
-        self._update_display()
-        
-        self.valueChanged.emit((min_val, max_val))
-        
-    def _update_display(self):
-        """Update the display label."""
-        self.value_label.setText(f"{self._current_min}-{self._current_max}")
-        
-    def setRange(self, min_val, max_val):
-        """Set the range."""
-        self._min_val = min_val
-        self._max_val = max_val
-        for slider in [self.min_slider, self.max_slider]:
-            slider.setRange(min_val, max_val)
-        self._update_display()
-        
-    def setValue(self, values):
-        """Set the current values."""
-        if isinstance(values, (tuple, list)) and len(values) == 2:
-            min_val, max_val = values
-            min_val = max(self._min_val, min(self._max_val, min_val))
-            max_val = max(self._min_val, min(self._max_val, max_val))
-            
-            self.min_slider.setValue(min_val)
-            self.max_slider.setValue(max_val)
-            
-    def value(self):
-        """Get current values."""
-        return (self._current_min, self._current_max)
 
 
 class DimensionSliceControl(QWidget):
@@ -131,8 +37,11 @@ class DimensionSliceControl(QWidget):
         self.label.setMaximumWidth(120)  # Increased to prevent clipping
         layout.addWidget(self.label)
 
-        # Use custom simple range slider (no superqt)
-        self.range_slider = SimpleRangeSlider(0, dim_size - 1, self)
+        self.range_slider = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
+        self.range_slider.setRange(0, dim_size - 1)
+        self.range_slider.setValue((0, dim_size - 1))
+        self.range_slider.setDecimals(1)  # Try with 1 decimal instead of 0
+        self.range_slider.setSingleStep(1)  # Force integer step
         
         layout.addWidget(self.range_slider, stretch=1)
 
