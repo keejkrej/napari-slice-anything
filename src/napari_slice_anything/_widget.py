@@ -40,12 +40,8 @@ class DimensionSliceControl(QWidget):
         self.range_slider = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
         self.range_slider.setRange(0, dim_size - 1)
         self.range_slider.setValue((0, dim_size - 1))
-        self.range_slider.setDecimals(1)  # Try with 1 decimal instead of 0
+        self.range_slider.setDecimals(0)  # Back to 0 decimals since the method works
         self.range_slider.setSingleStep(1)  # Force integer step
-        
-        # Debug: Check what decimals actually are
-        actual_decimals = self.range_slider.decimals()
-        print(f"Slider decimals set to: {actual_decimals}")
         
         layout.addWidget(self.range_slider, stretch=1)
 
