@@ -38,11 +38,10 @@ class DimensionSliceControl(QWidget):
         layout.addWidget(self.label)
 
         self.range_slider = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
-        self.range_slider.setRange(0.0, float(dim_size - 1))
-        self.range_slider.setValue((0.0, float(dim_size - 1)))
+        self.range_slider.setRange(0, dim_size - 1)  # Use integers
+        self.range_slider.setValue((0, dim_size - 1))  # Use integers
         self.range_slider.setDecimals(0)  # Show integers, no decimals
-        self.range_slider.setSingleStep(1.0)  # Step by 1 for integer values
-        self.range_slider.setTickPosition(QLabeledDoubleRangeSlider.TickPosition.NoTicks)  # Clean appearance
+        self.range_slider.setSingleStep(1)  # Step by 1 for integer values
         layout.addWidget(self.range_slider, stretch=1)
 
         self.size_label = QLabel(f"[{dim_size}]")
@@ -302,7 +301,7 @@ class SliceAnythingWidget(QWidget):
 
         shape = self._current_layer.data.shape
         for control, size in zip(self._dim_controls, shape):
-            control.range_slider.setValue((0.0, float(size - 1)))
+            control.range_slider.setValue((0, size - 1))
 
     def _toggle_draw_box(self):
         """Toggle crop box drawing mode."""
@@ -473,11 +472,11 @@ class SliceAnythingWidget(QWidget):
             if len(spatial_controls) >= 2:
                 # Apply to X dimension (second to last)
                 x_control = spatial_controls[-2]
-                x_control.range_slider.setValue((float(min_x), float(max_x)))
+                x_control.range_slider.setValue((min_x, max_x))
                 
                 # Apply to Y dimension (last)
                 y_control = spatial_controls[-1]
-                y_control.range_slider.setValue((float(min_y), float(max_y)))
+                y_control.range_slider.setValue((min_y, max_y))
                 
                 print(f"Crop box applied: X=[{min_x}, {max_x}], Y=[{min_y}, {max_y}]")
                 print(f"Updated sliders: {x_control.label.text()} and {y_control.label.text()}")
