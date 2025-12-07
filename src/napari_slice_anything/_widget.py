@@ -4,104 +4,17 @@ from typing import Optional
 
 import numpy as np
 from qtpy.QtCore import Qt
-from qtpy.QtWidgets import (
-    QComboBox,
-    QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
+from qtpy.QtWidgets import QVBoxLayout, QWidget
 
 import napari
-from napari.layers import Image, Shapes
+from napari.layers import Image
 
-
-class DimensionSliceControl(QWidget):
-    """A widget with text inputs for controlling slice bounds on one dimension."""
-
-    def __init__(self, dim_index: int, dim_size: int, dim_name: str = "", parent=None):
-        super().__init__(parent)
-        self.dim_index = dim_index
-        self.dim_size = dim_size
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 2, 4, 2)  # Increased margins to prevent clipping
-
-        self.label = QLabel(dim_name or f"Dim {dim_index}")
-        self.label.setMinimumWidth(80)
-        self.label.setMaximumWidth(120)  # Increased to prevent clipping
-        layout.addWidget(self.label)
-
-        # Simple text inputs for direct value entry
-        self.min_edit = QLineEdit()
-        self.max_edit = QLineEdit()
-        
-        for edit in [self.min_edit, self.max_edit]:
-            edit.setMaximumWidth(60)
-            edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            edit.textChanged.connect(self._validate_input)
-        
-        self.min_edit.setText("0")
-        self.max_edit.setText(str(dim_size - 1))
-        
-        layout.addWidget(self.min_edit)
-        layout.addWidget(QLabel("to"))
-        layout.addWidget(self.max_edit)
-        layout.addStretch()
-
-        self.size_label = QLabel(f"[{dim_size}]")
-        self.size_label.setMinimumWidth(70)
-        self.size_label.setMaximumWidth(90)  # Increased to prevent clipping
-        layout.addWidget(self.size_label)
-
-    def _validate_input(self):
-        """Validate text input and ensure valid ranges."""
-        try:
-            min_val = int(self.min_edit.text()) if self.min_edit.text() else 0
-            max_val = int(self.max_edit.text()) if self.max_edit.text() else self.dim_size - 1
-            
-            # Clamp to valid range
-            min_val = max(0, min(min_val, self.dim_size - 1))
-            max_val = max(0, min(max_val, self.dim_size - 1))
-            
-            # Update display if values were clamped
-            if min_val != int(self.min_edit.text()) if self.min_edit.text() else 0:
-                self.min_edit.setText(str(min_val))
-            if max_val != int(self.max_edit.text()) if self.max_edit.text() else self.dim_size - 1:
-                self.max_edit.setText(str(max_val))
-                
-        except ValueError:
-            # Invalid input, clear the field
-            if self.sender() == self.min_edit:
-                self.min_edit.setText("0")
-            else:
-                self.max_edit.setText(str(self.dim_size - 1))
-        
-    def get_slice(self) -> tuple[int, int]:
-        """Return the current (min, max) slice values as integers."""
-        try:
-            min_val = int(self.min_edit.text()) if self.min_edit.text() else 0
-            max_val = int(self.max_edit.text()) if self.max_edit.text() else self.dim_size - 1
-            
-            # Ensure valid range
-            min_val = max(0, min(min_val, self.dim_size - 1))
-            max_val = max(0, min(max_val, self.dim_size - 1))
-            
-            return (min_val, max_val + 1)
-        except ValueError:
-            return (0, self.dim_size)
-
-    def set_dim_info(self, dim_size: int, dim_name: str = ""):
-        """Update dimension size and name."""
-        self.dim_size = dim_size
-        self.max_edit.setText(str(dim_size - 1))
-        self.size_label.setText(f"[{dim_size}]")
-        if dim_name:
-            self.label.setText(dim_name)
+from .widgets import (
+    LayerSelector,
+    DimensionControls,
+    ButtonControls,
+    CropFromShapeHandler,
+)
 
 
 class SliceAnythingWidget(QWidget):
@@ -111,137 +24,67 @@ class SliceAnythingWidget(QWidget):
         super().__init__()
         self.viewer = napari_viewer
         self._current_layer: Optional[Image] = None
-        self._dim_controls: list[DimensionSliceControl] = []
+
+        # Initialize atomic components
+        self.layer_selector = LayerSelector(napari_viewer)
+        self.dimension_controls = DimensionControls()
+        self.button_controls = ButtonControls()
+        self.crop_handler = CropFromShapeHandler(napari_viewer, self.dimension_controls)
 
         self._setup_ui()
         self._connect_signals()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-
-        layer_group = QGroupBox("Layer Selection")
-        layer_layout = QFormLayout(layer_group)
-
-        self.layer_combo = QComboBox()
-        self.layer_combo.setPlaceholderText("Select an image layer...")
-        layer_layout.addRow("Image Layer:", self.layer_combo)
-
-        self.shape_label = QLabel("No layer selected")
-        layer_layout.addRow("Shape:", self.shape_label)
-
-        layout.addWidget(layer_group)
-
-        self.dims_group = QGroupBox("Dimension Slicing")
-        self.dims_layout = QVBoxLayout(self.dims_group)
-        self.dims_layout.addWidget(QLabel("Select an image layer to configure slicing"))
-        layout.addWidget(self.dims_group)
-
-        button_layout = QHBoxLayout()
-        self.apply_btn = QPushButton("Apply Slice")
-        self.apply_btn.setEnabled(False)
-        button_layout.addWidget(self.apply_btn)
-
-        self.reset_btn = QPushButton("Reset")
-        self.reset_btn.setEnabled(False)
-        button_layout.addWidget(self.reset_btn)
         
-        self.draw_box_btn = QPushButton("Apply Crop from Shape")
-        self.draw_box_btn.setEnabled(False)
-        self.draw_box_btn.setToolTip("Apply crop area from selected shape in a shapes layer")
-        button_layout.addWidget(self.draw_box_btn)
-
-        layout.addLayout(button_layout)
+        layout.addWidget(self.layer_selector)
+        layout.addWidget(self.dimension_controls)
+        layout.addWidget(self.button_controls)
         layout.addStretch()
 
-        self._update_layer_combo()
-
     def _connect_signals(self):
-        self.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
-        self.apply_btn.clicked.connect(self._apply_slice)
-        self.reset_btn.clicked.connect(self._reset_sliders)
-        self.draw_box_btn.clicked.connect(self._apply_crop_from_shape)
-
-        self.viewer.layers.events.inserted.connect(self._update_layer_combo)
-        self.viewer.layers.events.removed.connect(self._update_layer_combo)
-
-    def _update_layer_combo(self, event=None):
-        """Update the layer combo box with available image layers."""
-        current_text = self.layer_combo.currentText()
-        self.layer_combo.blockSignals(True)
-        self.layer_combo.clear()
-
-        for layer in self.viewer.layers:
-            if isinstance(layer, Image):
-                self.layer_combo.addItem(layer.name, layer)
-
-        if current_text:
-            idx = self.layer_combo.findText(current_text)
-            if idx >= 0:
-                self.layer_combo.setCurrentIndex(idx)
-
-        self.layer_combo.blockSignals(False)
-
-        if self.layer_combo.count() > 0 and self.layer_combo.currentIndex() == -1:
-            self.layer_combo.setCurrentIndex(0)
-            self._on_layer_changed(0)
+        """Connect signals between components."""
+        # Layer selector signals
+        self.layer_selector.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
+        
+        # Button signals
+        self.button_controls.apply_btn.clicked.connect(self._apply_slice)
+        self.button_controls.reset_btn.clicked.connect(self._reset_sliders)
+        self.button_controls.draw_box_btn.clicked.connect(self._apply_crop_from_shape)
+        
+        # Crop handler signals
+        self.crop_handler.crop_applied.connect(self._on_crop_applied)
+        self.crop_handler.crop_failed.connect(self._on_crop_failed)
 
     def _on_layer_changed(self, index: int):
         """Handle layer selection change."""
-        if index < 0:
-            self._current_layer = None
-            self._clear_dim_controls()
-            self.shape_label.setText("No layer selected")
-            self.apply_btn.setEnabled(False)
-            self.reset_btn.setEnabled(False)
-            self.draw_box_btn.setEnabled(False)
-            return
-
-        self._current_layer = self.layer_combo.itemData(index)
+        self._current_layer = self.layer_selector.get_current_layer()
+        
         if self._current_layer is None:
+            self._clear_dim_controls()
+            self._update_button_states(False)
             return
 
-        shape = self._current_layer.data.shape
-        self.shape_label.setText(str(shape))
-        self._setup_dim_controls(shape)
-        self.apply_btn.setEnabled(True)
-        self.reset_btn.setEnabled(True)
-        self.draw_box_btn.setEnabled(True)  # Enable if there's any shapes layer
+        # Setup dimension controls for the selected layer
+        self.dimension_controls.setup_controls(self._current_layer)
+        self._update_button_states(True)
 
     def _clear_dim_controls(self):
         """Remove all dimension controls."""
-        for control in self._dim_controls:
-            self.dims_layout.removeWidget(control)
-            control.deleteLater()
-        self._dim_controls.clear()
+        self.dimension_controls.clear_controls()
 
-        for i in reversed(range(self.dims_layout.count())):
-            item = self.dims_layout.itemAt(i)
-            if item.widget():
-                item.widget().deleteLater()
-
-    def _setup_dim_controls(self, shape: tuple):
-        """Set up dimension controls based on image shape."""
-        self._clear_dim_controls()
-
-        axis_names = getattr(self._current_layer, "axis_names", None)
-        if axis_names is None or len(axis_names) != len(shape):
-            axis_names = [f"Axis {i}" for i in range(len(shape))]
-
-        for i, (size, name) in enumerate(zip(shape, axis_names)):
-            control = DimensionSliceControl(i, size, str(name))
-            self._dim_controls.append(control)
-            self.dims_layout.addWidget(control)
+    def _update_button_states(self, layer_selected: bool):
+        """Update button enable states based on layer selection."""
+        self.button_controls.set_apply_enabled(layer_selected)
+        self.button_controls.set_reset_enabled(layer_selected)
+        self.button_controls.set_crop_enabled(layer_selected)
 
     def _apply_slice(self):
         """Apply the current slice configuration to create a new layer."""
         if self._current_layer is None:
             return
 
-        slices = []
-        for control in self._dim_controls:
-            start, stop = control.get_slice()
-            slices.append(slice(start, stop))
-
+        slices = self.dimension_controls.get_all_slices()
         sliced_data = self._current_layer.data[tuple(slices)]
 
         if sliced_data.size == 0:
@@ -305,7 +148,7 @@ class SliceAnythingWidget(QWidget):
                     'original_layer': self._current_layer.name,
                     'original_shape': list(self._current_layer.data.shape),
                     'sliced_shape': list(sliced_data.shape),
-                    'slice_bounds': [(c.get_slice()[0], c.get_slice()[1]) for c in self._dim_controls]
+                    'slice_bounds': [c.get_slice() for c in self.dimension_controls._dim_controls]
                 })
                 
                 # Ensure the layer has properties that make it saveable
@@ -332,102 +175,19 @@ class SliceAnythingWidget(QWidget):
 
     def _apply_crop_from_shape(self):
         """Apply crop area from selected shape in a shapes layer."""
-        # Find the currently selected shapes layer
-        shapes_layer = None
-        for layer in self.viewer.layers:
-            if isinstance(layer, Shapes) and len(layer.data) > 0:
-                # Check if any shapes are selected
-                if hasattr(layer, 'selected_data') and layer.selected_data:
-                    shapes_layer = layer
-                    break
-        
-        if shapes_layer is None:
-            return  # No selected shapes found
-            
-        try:
-            # Get the first selected shape's data
-            selected_indices = list(shapes_layer.selected_data)
-            if not selected_indices:
-                return  # No shape selected
-                
-            shape_index = selected_indices[0]
-            shape_data = shapes_layer.data[shape_index]
-            
-            # Extract bounding box coordinates
-            if len(shape_data) >= 4:  # Rectangle or polygon
-                coords = np.array(shape_data)
-                
-                # Handle any dimensional coordinate format by extracting last 2 dimensions (Y, X)
-                # This works for 2D, 3D, 4D, 5D, etc. - always take the spatial dimensions
-                ndim = coords.shape[1]
-                
-                # Extract spatial coordinates (last 2 dimensions: Y, X)
-                min_y = int(np.min(coords[:, ndim-2]))  # second to last dimension (Y)
-                max_y = int(np.max(coords[:, ndim-2]))  # second to last dimension (Y)
-                min_x = int(np.min(coords[:, ndim-1]))  # last dimension (X)
-                max_x = int(np.max(coords[:, ndim-1]))  # last dimension (X)
-                
-                # Try to convert to data coordinates if the shapes layer has transformation
-                try:
-                    if hasattr(shapes_layer, 'data_to_world'):
-                        # Extract spatial coordinates (last 2 dimensions regardless of total dimensions)
-                        spatial_coords = coords[:, [ndim-2, ndim-1]]  # Y, X coordinates
-                            
-                        world_coords = np.column_stack([spatial_coords[:, 0], spatial_coords[:, 1]])
-                        data_coords = shapes_layer.data_to_world(world_coords)
-                        min_x_data = int(np.min(data_coords[:, 0]))
-                        max_x_data = int(np.max(data_coords[:, 0]))
-                        min_y_data = int(np.min(data_coords[:, 1]))
-                        max_y_data = int(np.max(data_coords[:, 1]))
-                        
-                        # Use data coordinates if they seem reasonable
-                        if abs(max_x_data - min_x_data) > 1 and abs(max_y_data - min_y_data) > 1:
-                            min_x, max_x = min_x_data, max_x_data
-                            min_y, max_y = min_y_data, max_y_data
-                        
-                except Exception as e:
-                    pass  # Use processed coordinates if conversion fails
-                
-                # Ensure coordinates are within bounds of the current layer
-                if self._current_layer is not None:
-                    shape = self._current_layer.data.shape
-                    # Clamp to valid range
-                    min_x = max(0, min(min_x, shape[-1] - 1))
-                    max_x = max(0, min(max_x, shape[-1] - 1))
-                    min_y = max(0, min(min_y, shape[-2] - 1))
-                    max_y = max(0, min(max_y, shape[-2] - 1))
-                    
-                # Find spatial dimension controls (last 2 dimensions with size > 1)
-                spatial_controls = []
-                for control in self._dim_controls:
-                    if control.dim_size > 1:
-                        spatial_controls.append(control)
-                
-                # Apply to the last 2 spatial dimensions (usually Y, X)
-                if len(spatial_controls) >= 2:
-                    # Apply to Y dimension (second to last spatial control)
-                    y_control = spatial_controls[-2]
-                    y_control.min_edit.setText(str(min_y))
-                    y_control.max_edit.setText(str(max_y))
-                    
-                    # Apply to X dimension (last spatial control)
-                    x_control = spatial_controls[-1]
-                    x_control.min_edit.setText(str(min_x))
-                    x_control.max_edit.setText(str(max_x))
-                else:
-                    pass  # Could not find 2 spatial dimensions to apply crop
-            else:
-                pass  # Selected shape doesn't have enough vertices for a bounding box
-                
-        except Exception as e:
-            pass  # Error applying crop from shape
+        self.crop_handler.apply_crop_from_shape()
+
+    def _on_crop_applied(self):
+        """Handle successful crop application."""
+        pass  # Could add user feedback here
+
+    def _on_crop_failed(self, error_message: str):
+        """Handle crop application failure."""
+        pass  # Could add user feedback here
 
     def _reset_sliders(self):
-        """Reset all sliders to full range."""
+        """Reset all dimension controls to full range."""
         if self._current_layer is None:
             return
 
-        shape = self._current_layer.data.shape
-        for control, size in zip(self._dim_controls, shape):
-            control.min_edit.setText("0")
-            control.max_edit.setText(str(size - 1))
+        self.dimension_controls.reset_all()
