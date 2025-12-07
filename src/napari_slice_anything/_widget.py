@@ -386,6 +386,55 @@ class SliceAnythingWidget(QWidget):
                 min_y = int(np.min(coords[:, 1]))
                 max_y = int(np.max(coords[:, 1]))
                 
+                # Debug: Show raw coordinates first
+                print(f"Raw shape coordinates: {coords}")
+                print(f"Raw min/max: X=[{min_x}, {max_x}], Y=[{min_y}, {max_y}]")
+                
+                # Try to convert to data coordinates if the shapes layer has transformation
+                try:
+                    if hasattr(shapes_layer, 'data_to_world'):
+                        # Convert shape coordinates to data coordinates
+                        world_coords = np.column_stack([coords[:, 0], coords[:, 1]])
+                        data_coords = shapes_layer.data_to_world(world_coords)
+                        min_x = int(np.min(data_coords[:, 0]))
+                        max_x = int(np.max(data_coords[:, 0]))
+                        min_y = int(np.min(data_coords[:, 1]))
+                        max_y = int(np.max(data_coords[:, 1]))
+                        print(f"Data coordinates: X=[{min_x}, {max_x}], Y=[{min_y}, {max_y}]")
+                except Exception as e:
+                    print(f"Coordinate conversion failed: {e}, using raw coordinates")
+                
+                # Also try to account for current slice position
+                try:
+                    current_step = list(self.viewer.dims.current_step)
+                    if len(current_step) >= 2:
+                        # The shape might be relative to current slice position
+                        # Try both raw and offset coordinates
+                        offset_x_min = min_x + current_step[-1] if len(current_step) > 0 else min_x
+                        offset_x_max = max_x + current_step[-1] if len(current_step) > 0 else max_x
+                        offset_y_min = min_y + current_step[-2] if len(current_step) > 1 else min_y
+                        offset_y_max = max_y + current_step[-2] if len(current_step) > 1 else max_y
+                        
+                        print(f"Offset coordinates: X=[{offset_x_min}, {offset_x_max}], Y=[{offset_y_min}, {offset_y_max}]")
+                        
+                        # Use the offset coordinates if they seem more reasonable
+                        if abs(offset_x_max - offset_x_min) > abs(max_x - min_x):
+                            min_x, max_x = offset_x_min, offset_x_max
+                            min_y, max_y = offset_y_min, offset_y_max
+                            print("Using offset coordinates")
+                        
+                except Exception as e:
+                    print(f"Offset calculation failed: {e}")
+                
+                # Ensure coordinates are within bounds of the current layer
+                if self._current_layer is not None:
+                    shape = self._current_layer.data.shape
+                    # Clamp to valid range
+                    min_x = max(0, min(min_x, shape[-1] - 1))
+                    max_x = max(0, min(max_x, shape[-1] - 1))
+                    min_y = max(0, min(min_y, shape[-2] - 1))
+                    max_y = max(0, min(max_y, shape[-2] - 1))
+                    
                 # Find spatial dimension controls (last 2 dimensions with size > 1)
                 spatial_controls = []
                 for control in self._dim_controls:
