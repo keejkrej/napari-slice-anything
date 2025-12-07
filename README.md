@@ -32,11 +32,12 @@ You can install `napari-slice-anything` via [pip]:
 5. Click "Apply Slice" to create a new layer with the sliced data
 
 ### Visual Crop Box Drawing
-1. Select an image layer in the plugin
-2. Click "Draw Crop Box" to enter drawing mode
-3. Click and drag on the image to draw a rectangle
-4. Click "Finish Crop Box" to apply the crop area to the sliders
-5. Click "Apply Slice" to create the cropped data
+1. Create a shapes layer in napari (any layer with rectangles/polygons)
+2. Draw a rectangle on your image using napari's built-in shapes tools
+3. Select the shape you want to use for cropping
+4. Click "Apply Crop from Shape" in the plugin
+5. The plugin will automatically extract the crop coordinates from your selected shape
+6. Click "Apply Slice" to create the cropped data
 
 ## Contributing
 
