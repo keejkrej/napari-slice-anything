@@ -43,15 +43,6 @@ class DimensionSliceControl(QWidget):
         for edit in [self.min_edit, self.max_edit]:
             edit.setMaximumWidth(60)
             edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            edit.setStyleSheet("""
-                QLineEdit {
-                    border: 1px solid gray;
-                    padding: 2px;
-                    background: white;
-                    font-weight: bold;
-                    font-size: 10px;
-                }
-            """)
             edit.textChanged.connect(self._validate_input)
         
         self.min_edit.setText("0")
@@ -108,20 +99,6 @@ class DimensionSliceControl(QWidget):
         """Update dimension size and name."""
         self.dim_size = dim_size
         self.max_edit.setText(str(dim_size - 1))
-        self.size_label.setText(f"[{dim_size}]")
-        if dim_name:
-            self.label.setText(dim_name)
-
-    def get_slice(self) -> tuple[int, int]:
-        """Return the current (min, max) slice values as integers."""
-        val = self.range_slider.value()
-        return (int(val[0]), int(val[1]) + 1)
-
-    def set_dim_info(self, dim_size: int, dim_name: str = ""):
-        """Update dimension size and name."""
-        self.dim_size = dim_size
-        self.range_slider.data_range = (0, dim_size - 1)
-        self.range_slider.set_values((0, dim_size - 1))
         self.size_label.setText(f"[{dim_size}]")
         if dim_name:
             self.label.setText(dim_name)
@@ -365,15 +342,13 @@ class SliceAnythingWidget(QWidget):
                     break
         
         if shapes_layer is None:
-            print("No selected shapes found. Please select a shape in a shapes layer.")
-            return
+            return  # No selected shapes found
             
         try:
             # Get the first selected shape's data
             selected_indices = list(shapes_layer.selected_data)
             if not selected_indices:
-                print("No shape selected. Please select a shape in the shapes layer.")
-                return
+                return  # No shape selected
                 
             shape_index = selected_indices[0]
             shape_data = shapes_layer.data[shape_index]
@@ -381,50 +356,37 @@ class SliceAnythingWidget(QWidget):
             # Extract bounding box coordinates
             if len(shape_data) >= 4:  # Rectangle or polygon
                 coords = np.array(shape_data)
-                min_x = int(np.min(coords[:, 0]))
-                max_x = int(np.max(coords[:, 0]))
-                min_y = int(np.min(coords[:, 1]))
-                max_y = int(np.max(coords[:, 1]))
                 
-                # Debug: Show raw coordinates first
-                print(f"Raw shape coordinates: {coords}")
-                print(f"Raw min/max: X=[{min_x}, {max_x}], Y=[{min_y}, {max_y}]")
+                # Handle any dimensional coordinate format by extracting last 2 dimensions (Y, X)
+                # This works for 2D, 3D, 4D, 5D, etc. - always take the spatial dimensions
+                ndim = coords.shape[1]
+                
+                # Extract spatial coordinates (last 2 dimensions: Y, X)
+                min_y = int(np.min(coords[:, ndim-2]))  # second to last dimension (Y)
+                max_y = int(np.max(coords[:, ndim-2]))  # second to last dimension (Y)
+                min_x = int(np.min(coords[:, ndim-1]))  # last dimension (X)
+                max_x = int(np.max(coords[:, ndim-1]))  # last dimension (X)
                 
                 # Try to convert to data coordinates if the shapes layer has transformation
                 try:
                     if hasattr(shapes_layer, 'data_to_world'):
-                        # Convert shape coordinates to data coordinates
-                        world_coords = np.column_stack([coords[:, 0], coords[:, 1]])
+                        # Extract spatial coordinates (last 2 dimensions regardless of total dimensions)
+                        spatial_coords = coords[:, [ndim-2, ndim-1]]  # Y, X coordinates
+                            
+                        world_coords = np.column_stack([spatial_coords[:, 0], spatial_coords[:, 1]])
                         data_coords = shapes_layer.data_to_world(world_coords)
-                        min_x = int(np.min(data_coords[:, 0]))
-                        max_x = int(np.max(data_coords[:, 0]))
-                        min_y = int(np.min(data_coords[:, 1]))
-                        max_y = int(np.max(data_coords[:, 1]))
-                        print(f"Data coordinates: X=[{min_x}, {max_x}], Y=[{min_y}, {max_y}]")
-                except Exception as e:
-                    print(f"Coordinate conversion failed: {e}, using raw coordinates")
-                
-                # Also try to account for current slice position
-                try:
-                    current_step = list(self.viewer.dims.current_step)
-                    if len(current_step) >= 2:
-                        # The shape might be relative to current slice position
-                        # Try both raw and offset coordinates
-                        offset_x_min = min_x + current_step[-1] if len(current_step) > 0 else min_x
-                        offset_x_max = max_x + current_step[-1] if len(current_step) > 0 else max_x
-                        offset_y_min = min_y + current_step[-2] if len(current_step) > 1 else min_y
-                        offset_y_max = max_y + current_step[-2] if len(current_step) > 1 else max_y
+                        min_x_data = int(np.min(data_coords[:, 0]))
+                        max_x_data = int(np.max(data_coords[:, 0]))
+                        min_y_data = int(np.min(data_coords[:, 1]))
+                        max_y_data = int(np.max(data_coords[:, 1]))
                         
-                        print(f"Offset coordinates: X=[{offset_x_min}, {offset_x_max}], Y=[{offset_y_min}, {offset_y_max}]")
-                        
-                        # Use the offset coordinates if they seem more reasonable
-                        if abs(offset_x_max - offset_x_min) > abs(max_x - min_x):
-                            min_x, max_x = offset_x_min, offset_x_max
-                            min_y, max_y = offset_y_min, offset_y_max
-                            print("Using offset coordinates")
+                        # Use data coordinates if they seem reasonable
+                        if abs(max_x_data - min_x_data) > 1 and abs(max_y_data - min_y_data) > 1:
+                            min_x, max_x = min_x_data, max_x_data
+                            min_y, max_y = min_y_data, max_y_data
                         
                 except Exception as e:
-                    print(f"Offset calculation failed: {e}")
+                    pass  # Use processed coordinates if conversion fails
                 
                 # Ensure coordinates are within bounds of the current layer
                 if self._current_layer is not None:
@@ -441,27 +403,24 @@ class SliceAnythingWidget(QWidget):
                     if control.dim_size > 1:
                         spatial_controls.append(control)
                 
-                # Apply to the last 2 spatial dimensions (usually X, Y)
+                # Apply to the last 2 spatial dimensions (usually Y, X)
                 if len(spatial_controls) >= 2:
-                    # Apply to X dimension (second to last)
-                    x_control = spatial_controls[-2]
-                    x_control.min_edit.setText(str(min_x))
-                    x_control.max_edit.setText(str(max_x))
-                    
-                    # Apply to Y dimension (last)
-                    y_control = spatial_controls[-1]
+                    # Apply to Y dimension (second to last spatial control)
+                    y_control = spatial_controls[-2]
                     y_control.min_edit.setText(str(min_y))
                     y_control.max_edit.setText(str(max_y))
                     
-                    print(f"Crop applied from shape: X=[{min_x}, {max_x}], Y=[{min_y}, {max_y}]")
-                    print(f"Updated sliders: {x_control.label.text()} and {y_control.label.text()}")
+                    # Apply to X dimension (last spatial control)
+                    x_control = spatial_controls[-1]
+                    x_control.min_edit.setText(str(min_x))
+                    x_control.max_edit.setText(str(max_x))
                 else:
-                    print("Could not find 2 spatial dimensions to apply crop")
+                    pass  # Could not find 2 spatial dimensions to apply crop
             else:
-                print("Selected shape doesn't have enough vertices for a bounding box")
+                pass  # Selected shape doesn't have enough vertices for a bounding box
                 
         except Exception as e:
-            print(f"Error applying crop from shape: {e}")
+            pass  # Error applying crop from shape
 
     def _reset_sliders(self):
         """Reset all sliders to full range."""
