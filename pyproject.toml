@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools-scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "napari-slice-anything"
+version = "0.1.0"
+description = "A napari plugin for slicing multidimensional image stacks with range sliders"
+readme = "README.md"
+license = {text = "BSD-3-Clause"}
+authors = [
+    {name = "jack"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: napari",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "napari>=0.4.18",
+    "numpy",
+    "qtpy",
+    "superqt>=0.6.0",
+]
+
+[project.optional-dependencies]
+testing = [
+    "pytest",
+    "pytest-cov",
+    "pytest-qt",
+]
+dev = [
+    "pre-commit",
+    "ruff",
+]
+
+[project.entry-points."napari.manifest"]
+napari-slice-anything = "napari_slice_anything:napari.yaml"
+
+[project.urls]
+"Bug Tracker" = "https://github.com/jack/napari-slice-anything/issues"
+"Source Code" = "https://github.com/jack/napari-slice-anything"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+napari_slice_anything = ["napari.yaml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]

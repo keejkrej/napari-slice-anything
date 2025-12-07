@@ -1,0 +1,10 @@
+name: napari-slice-anything
+display_name: Slice Anything
+contributions:
+  commands:
+    - id: napari-slice-anything.slice_widget
+      python_name: napari_slice_anything:SliceAnythingWidget
+      title: Slice Anything
+  widgets:
+    - command: napari-slice-anything.slice_widget
+      display_name: Slice Anything
