@@ -214,16 +214,16 @@ class SliceAnythingWidget(QWidget):
             new_name = f"{base_name}_{counter}"
             counter += 1
 
-        # Create a new layer that should be saveable
+        # Create a layer that napari's save system can recognize
         try:
-            # Try to preserve all properties from the original layer
+            # Copy display properties from original layer
             layer_kwargs = {
                 'name': new_name,
-                'rgb': False,
                 'data': sliced_data,
+                'rgb': False,
             }
             
-            # Copy display properties
+            # Copy visual properties that might affect saving
             if hasattr(self._current_layer, 'contrast_limits'):
                 try:
                     layer_kwargs['contrast_limits'] = self._current_layer.contrast_limits
@@ -242,34 +242,55 @@ class SliceAnythingWidget(QWidget):
                 except:
                     pass
             
-            # Add metadata
-            layer_kwargs['metadata'] = {
-                'sliced_by': 'napari-slice-anything',
-                'original_shape': list(self._current_layer.data.shape),
-                'sliced_shape': list(sliced_data.shape)
-            }
-            
-            # Create the layer
+            # Create the layer first
             new_layer = self.viewer.add_image(**layer_kwargs)
             
-            # Set source information
+            # Now set up proper source metadata for napari's save system
             try:
+                # Create a proper source object that mimics a file-loaded layer
                 from napari.layers._source import Source
-                new_layer._source = Source(
-                    path=None,
-                    reader_plugin='napari',
-                    plugin='napari-slice-anything'
-                )
-            except ImportError:
-                # If Source is not available, try alternative
-                try:
-                    new_layer._source = self._current_layer._source
-                except:
-                    pass
-                    
+                
+                # Try to get the original layer's source info
+                original_source = getattr(self._current_layer, '_source', None)
+                if original_source is not None:
+                    # Copy structure from original but mark as plugin-created
+                    new_layer._source = Source(
+                        path=getattr(original_source, 'path', None),
+                        reader_plugin=getattr(original_source, 'reader_plugin', 'napari'),
+                        plugin='napari-slice-anything'
+                    )
+                else:
+                    # Create minimal source structure
+                    new_layer._source = Source(
+                        path=None,
+                        reader_plugin='napari',
+                        plugin='napari-slice-anything'
+                    )
+                
+                # Add metadata that helps with saving
+                new_layer.metadata.update({
+                    'sliced_by': 'napari-slice-anything',
+                    'original_layer': self._current_layer.name,
+                    'original_shape': list(self._current_layer.data.shape),
+                    'sliced_shape': list(sliced_data.shape),
+                    'slice_bounds': [(c.get_slice()[0], c.get_slice()[1]) for c in self._dim_controls]
+                })
+                
+                # Ensure the layer has properties that make it saveable
+                # Set some attributes that the npe2 system checks for
+                new_layer._type_string = 'image'  # Explicitly set type
+                
+            except Exception as e:
+                print(f"Warning: Could not set up complete source metadata: {e}")
+                # Fallback: at least ensure basic metadata
+                new_layer.metadata.update({
+                    'sliced_by': 'napari-slice-anything',
+                    'original_layer': self._current_layer.name
+                })
+                
         except Exception as e:
             print(f"Warning: Could not create layer with full properties: {e}")
-            # Fallback to minimal layer creation
+            # Minimal fallback
             new_layer = self.viewer.add_image(
                 sliced_data,
                 name=new_name,
