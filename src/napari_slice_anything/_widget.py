@@ -43,6 +43,10 @@ class DimensionSliceControl(QWidget):
         self.range_slider.setDecimals(1)  # Try with 1 decimal instead of 0
         self.range_slider.setSingleStep(1)  # Force integer step
         
+        # Debug: Check what decimals actually are
+        actual_decimals = self.range_slider.decimals()
+        print(f"Slider decimals set to: {actual_decimals}")
+        
         layout.addWidget(self.range_slider, stretch=1)
 
         self.size_label = QLabel(f"[{dim_size}]")
