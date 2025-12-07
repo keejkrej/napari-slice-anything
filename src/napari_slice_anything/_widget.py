@@ -18,7 +18,6 @@ from qtpy.QtWidgets import (
 
 import napari
 from napari.layers import Image, Shapes
-from napari.layers.shapes._shapes_utils import create_box
 
 
 class DimensionSliceControl(QWidget):
@@ -136,10 +135,6 @@ class SliceAnythingWidget(QWidget):
         self.viewer = napari_viewer
         self._current_layer: Optional[Image] = None
         self._dim_controls: list[DimensionSliceControl] = []
-        self._drawing_crop_box = False
-        self._crop_box_layer: Optional[Shapes] = None
-        self._drawing_start_pos = None
-        self._current_crop_rect = None
 
         self._setup_ui()
         self._connect_signals()
@@ -173,9 +168,9 @@ class SliceAnythingWidget(QWidget):
         self.reset_btn.setEnabled(False)
         button_layout.addWidget(self.reset_btn)
         
-        self.draw_box_btn = QPushButton("Draw Crop Box")
+        self.draw_box_btn = QPushButton("Apply Crop from Shape")
         self.draw_box_btn.setEnabled(False)
-        self.draw_box_btn.setToolTip("Draw a rectangle on the image to define crop area")
+        self.draw_box_btn.setToolTip("Apply crop area from selected shape in a shapes layer")
         button_layout.addWidget(self.draw_box_btn)
 
         layout.addLayout(button_layout)
@@ -187,7 +182,7 @@ class SliceAnythingWidget(QWidget):
         self.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
         self.apply_btn.clicked.connect(self._apply_slice)
         self.reset_btn.clicked.connect(self._reset_sliders)
-        self.draw_box_btn.clicked.connect(self._toggle_draw_box)
+        self.draw_box_btn.clicked.connect(self._apply_crop_from_shape)
 
         self.viewer.layers.events.inserted.connect(self._update_layer_combo)
         self.viewer.layers.events.removed.connect(self._update_layer_combo)
@@ -233,7 +228,7 @@ class SliceAnythingWidget(QWidget):
         self._setup_dim_controls(shape)
         self.apply_btn.setEnabled(True)
         self.reset_btn.setEnabled(True)
-        self.draw_box_btn.setEnabled(True)
+        self.draw_box_btn.setEnabled(True)  # Enable if there's any shapes layer
 
     def _clear_dim_controls(self):
         """Remove all dimension controls."""
@@ -358,6 +353,67 @@ class SliceAnythingWidget(QWidget):
                 metadata={'sliced_by': 'napari-slice-anything'}
             )
 
+    def _apply_crop_from_shape(self):
+        """Apply crop area from selected shape in a shapes layer."""
+        # Find the currently selected shapes layer
+        shapes_layer = None
+        for layer in self.viewer.layers:
+            if isinstance(layer, Shapes) and len(layer.data) > 0:
+                # Check if any shapes are selected
+                if hasattr(layer, 'selected_data') and layer.selected_data:
+                    shapes_layer = layer
+                    break
+        
+        if shapes_layer is None:
+            print("No selected shapes found. Please select a shape in a shapes layer.")
+            return
+            
+        try:
+            # Get the first selected shape's data
+            selected_indices = list(shapes_layer.selected_data)
+            if not selected_indices:
+                print("No shape selected. Please select a shape in the shapes layer.")
+                return
+                
+            shape_index = selected_indices[0]
+            shape_data = shapes_layer.data[shape_index]
+            
+            # Extract bounding box coordinates
+            if len(shape_data) >= 4:  # Rectangle or polygon
+                coords = np.array(shape_data)
+                min_x = int(np.min(coords[:, 0]))
+                max_x = int(np.max(coords[:, 0]))
+                min_y = int(np.min(coords[:, 1]))
+                max_y = int(np.max(coords[:, 1]))
+                
+                # Find spatial dimension controls (last 2 dimensions with size > 1)
+                spatial_controls = []
+                for control in self._dim_controls:
+                    if control.dim_size > 1:
+                        spatial_controls.append(control)
+                
+                # Apply to the last 2 spatial dimensions (usually X, Y)
+                if len(spatial_controls) >= 2:
+                    # Apply to X dimension (second to last)
+                    x_control = spatial_controls[-2]
+                    x_control.min_edit.setText(str(min_x))
+                    x_control.max_edit.setText(str(max_x))
+                    
+                    # Apply to Y dimension (last)
+                    y_control = spatial_controls[-1]
+                    y_control.min_edit.setText(str(min_y))
+                    y_control.max_edit.setText(str(max_y))
+                    
+                    print(f"Crop applied from shape: X=[{min_x}, {max_x}], Y=[{min_y}, {max_y}]")
+                    print(f"Updated sliders: {x_control.label.text()} and {y_control.label.text()}")
+                else:
+                    print("Could not find 2 spatial dimensions to apply crop")
+            else:
+                print("Selected shape doesn't have enough vertices for a bounding box")
+                
+        except Exception as e:
+            print(f"Error applying crop from shape: {e}")
+
     def _reset_sliders(self):
         """Reset all sliders to full range."""
         if self._current_layer is None:
@@ -365,191 +421,5 @@ class SliceAnythingWidget(QWidget):
 
         shape = self._current_layer.data.shape
         for control, size in zip(self._dim_controls, shape):
-            control.range_slider.setValue((0, size - 1))
-
-    def _toggle_draw_box(self):
-        """Toggle crop box drawing mode."""
-        if not self._drawing_crop_box:
-            self._start_crop_box_drawing()
-        else:
-            self._stop_crop_box_drawing()
-
-    def _start_crop_box_drawing(self):
-        """Start crop box drawing mode."""
-        self._drawing_crop_box = True
-        self.draw_box_btn.setText("Finish Crop Box")
-        self.draw_box_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; }")
-        
-        # Create a shapes layer for the crop box if it doesn't exist
-        if self._crop_box_layer is None or self._crop_box_layer not in self.viewer.layers:
-            self._crop_box_layer = self.viewer.add_shapes(
-                name="Crop Box",
-                face_color=[0, 255, 0, 0.1],  # Semi-transparent green
-                edge_color=[0, 255, 0, 1],    # Solid green edges
-                edge_width=2,
-                ndim=2  # 2D rectangles
-            )
-        
-        # Connect mouse event handlers
-        self.viewer.canvas.events.mouse_press.connect(self._on_mouse_press)
-        self.viewer.canvas.events.mouse_drag.connect(self._on_mouse_drag)
-        self.viewer.canvas.events.mouse_release.connect(self._on_mouse_release)
-
-    def _stop_crop_box_drawing(self):
-        """Stop crop box drawing mode."""
-        self._drawing_crop_box = False
-        self.draw_box_btn.setText("Draw Crop Box")
-        self.draw_box_btn.setStyleSheet("")  # Reset to default style
-        
-        # Remove event handlers
-        try:
-            self.viewer.canvas.events.mouse_press.disconnect(self._on_mouse_press)
-            self.viewer.canvas.events.mouse_drag.disconnect(self._on_mouse_drag)
-            self.viewer.canvas.events.mouse_release.disconnect(self._on_mouse_release)
-        except:
-            pass  # Event handlers might not be connected
-        
-        # Apply the crop box to sliders if we have a valid crop rectangle
-        if self._current_crop_rect is not None:
-            self._apply_crop_box_to_sliders(self._current_crop_rect)
-        else:
-            # Clear crop box if no valid rectangle
-            if self._crop_box_layer:
-                self._crop_box_layer.data = []
-        
-        # Reset drawing state
-        self._drawing_start_pos = None
-        self._current_crop_rect = None
-
-    def _on_mouse_press(self, event):
-        """Handle mouse press to start drawing crop box."""
-        if not self._drawing_crop_box or not event.button == 0:  # Left click only
-            return
-            
-        if self._current_layer is None:
-            return
-            
-        pos = event.position
-        if pos is None:
-            return
-            
-        try:
-            # Get current displayed dimensions and slice position
-            current_step = list(self.viewer.dims.current_step)
-            shape = self._current_layer.data.shape
-            
-            # Simple coordinate extraction for 2D view
-            # We assume the current displayed 2D slice
-            x_pos = int(pos[0]) if len(pos) > 0 else 0
-            y_pos = int(pos[1]) if len(pos) > 1 else 0
-            
-            # Convert to data coordinates (adjusting for current slice position)
-            # This is simplified but should work for most cases
-            data_x = x_pos + current_step[-1] if len(current_step) > 0 else x_pos
-            data_y = y_pos + current_step[-2] if len(current_step) > 1 else y_pos
-            
-            # Ensure within bounds
-            data_x = max(0, min(data_x, shape[-1] - 1))
-            data_y = max(0, min(data_y, shape[-2] - 1))
-            
-            self._drawing_start_pos = [data_x, data_y]
-            self._current_crop_rect = None
-            print(f"Starting crop box at: ({data_x}, {data_y})")
-                
-        except Exception as e:
-            print(f"Error in mouse press handling: {e}")
-
-    def _on_mouse_drag(self, event):
-        """Handle mouse drag to update crop box."""
-        if not self._drawing_crop_box or self._drawing_start_pos is None:
-            return
-            
-        pos = event.position
-        if pos is None:
-            return
-            
-        try:
-            # Get current displayed dimensions and slice position
-            current_step = list(self.viewer.dims.current_step)
-            shape = self._current_layer.data.shape
-            
-            # Simple coordinate extraction for 2D view
-            x_pos = int(pos[0]) if len(pos) > 0 else 0
-            y_pos = int(pos[1]) if len(pos) > 1 else 0
-            
-            # Convert to data coordinates
-            data_x = x_pos + current_step[-1] if len(current_step) > 0 else x_pos
-            data_y = y_pos + current_step[-2] if len(current_step) > 1 else y_pos
-            
-            # Ensure within bounds
-            data_x = max(0, min(data_x, shape[-1] - 1))
-            data_y = max(0, min(data_y, shape[-2] - 1))
-            
-            # Create rectangle from start to current position
-            start_x, start_y = self._drawing_start_pos
-            
-            # Ensure minimum size
-            if abs(data_x - start_x) >= 1 and abs(data_y - start_y) >= 1:
-                rect = [
-                    [start_x, start_y],
-                    [data_x, start_y],
-                    [data_x, data_y],
-                    [start_x, data_y]
-                ]
-                
-                # Update the crop box layer
-                if self._crop_box_layer:
-                    self._crop_box_layer.data = [np.array(rect)]
-                    self._current_crop_rect = rect
-                    print(f"Updating crop box: {start_x},{start_y} to {data_x},{data_y}")
-                    
-        except Exception as e:
-            print(f"Error in mouse drag handling: {e}")
-
-    def _on_mouse_release(self, event):
-        """Handle mouse release to finish crop box."""
-        if not self._drawing_crop_box:
-            return
-        # Mouse release doesn't need special handling here
-        pass
-
-    def _apply_crop_box_to_sliders(self, crop_rect):
-        """Apply crop box coordinates to dimension sliders."""
-        if not crop_rect or len(crop_rect) != 4:
-            return
-            
-        try:
-            # Extract coordinates from rectangle
-            coords = np.array(crop_rect)
-            min_x = int(np.min(coords[:, 0]))
-            max_x = int(np.max(coords[:, 0]))
-            min_y = int(np.min(coords[:, 1]))
-            max_y = int(np.max(coords[:, 1]))
-            
-            # Find the spatial dimension controls (last 2 dimensions with size > 1)
-            spatial_controls = []
-            for i, control in enumerate(self._dim_controls):
-                if control.dim_size > 1:
-                    spatial_controls.append(control)
-            
-            # Apply to the last 2 spatial dimensions (usually X, Y)
-            if len(spatial_controls) >= 2:
-                # Apply to X dimension (second to last)
-                x_control = spatial_controls[-2]
-                x_control.range_slider.set_values((min_x, max_x))
-                
-                # Apply to Y dimension (last)
-                y_control = spatial_controls[-1]
-                y_control.range_slider.set_values((min_y, max_y))
-                
-                print(f"Crop box applied: X=[{min_x}, {max_x}], Y=[{min_y}, {max_y}]")
-                print(f"Updated sliders: {x_control.label.text()} and {y_control.label.text()}")
-            else:
-                print("Could not find 2 spatial dimensions to apply crop box")
-                
-        except Exception as e:
-            print(f"Error applying crop box to sliders: {e}")
-        finally:
-            # Clear the crop box after applying
-            if self._crop_box_layer:
-                self._crop_box_layer.data = []
+            control.min_edit.setText("0")
+            control.max_edit.setText(str(size - 1))
