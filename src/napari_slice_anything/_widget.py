@@ -203,12 +203,51 @@ class SliceAnythingWidget(QWidget):
             new_name = f"{base_name}_{counter}"
             counter += 1
 
-        # Create new layer with all necessary properties preserved
-        self.viewer.add_image(
-            sliced_data,
-            name=new_name,
-            rgb=False,  # Explicitly set to avoid confusion with multi-channel data
-        )
+        # Create a new layer with comprehensive metadata copying
+        try:
+            # Start with basic parameters
+            layer_kwargs = {
+                'name': new_name,
+                'rgb': False,
+                'data': sliced_data,
+            }
+            
+            # Copy all possible properties from the original layer
+            properties_to_copy = [
+                'contrast_limits', 'gamma', 'interpolation', 'colormap',
+                'blending', 'opacity', 'visible', 'editable'
+            ]
+            
+            for prop in properties_to_copy:
+                if hasattr(self._current_layer, prop):
+                    try:
+                        layer_kwargs[prop] = getattr(self._current_layer, prop)
+                    except Exception:
+                        pass  # Skip properties that can't be copied
+            
+            # Copy metadata if it exists
+            if hasattr(self._current_layer, 'metadata'):
+                layer_kwargs['metadata'] = self._current_layer.metadata.copy()
+            
+            # Copy axis names if they exist
+            if hasattr(self._current_layer, 'axis_names'):
+                layer_kwargs['axis_names'] = self._current_layer.axis_names
+            
+            # Add the layer using add_image with all properties
+            new_layer = self.viewer.add_image(**layer_kwargs)
+            
+            # Copy the source information to help with saving
+            if hasattr(self._current_layer, '_source'):
+                new_layer._source = self._current_layer._source
+                
+        except Exception as e:
+            print(f"Warning: Could not copy all layer properties: {e}")
+            # Fallback to minimal layer creation
+            new_layer = self.viewer.add_image(
+                sliced_data,
+                name=new_name,
+                rgb=False
+            )
 
     def _reset_sliders(self):
         """Reset all sliders to full range."""
