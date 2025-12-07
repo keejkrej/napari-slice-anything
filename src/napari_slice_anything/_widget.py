@@ -14,7 +14,7 @@ from qtpy.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from superqt import QLabeledDoubleRangeSlider
+from napari._qt.widgets.qt_range_slider import QHRangeSlider
 
 import napari
 from napari.layers import Image, Shapes
@@ -37,23 +37,11 @@ class DimensionSliceControl(QWidget):
         self.label.setMaximumWidth(120)  # Increased to prevent clipping
         layout.addWidget(self.label)
 
-        self.range_slider = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
-        self.range_slider.setRange(0, dim_size - 1)
-        self.range_slider.setValue((0, dim_size - 1))
-        self.range_slider.setDecimals(0)  # Force integer display
-        
-        # Set proper step for integers
-        self.range_slider.setSingleStep(1)
-        
-        # Apply custom styling to force integer display
-        self.range_slider.setStyleSheet("""
-            QLabeledDoubleRangeSlider {
-                font-size: 10px;
-            }
-            QLabeledDoubleRangeSlider QLabel {
-                font-weight: bold;
-            }
-        """)
+        # Use napari's built-in QHRangeSlider for proper integer display
+        self.range_slider = QHRangeSlider(
+            initial_values=(0, dim_size - 1), 
+            data_range=(0, dim_size - 1)
+        )
         
         layout.addWidget(self.range_slider, stretch=1)
 
@@ -64,14 +52,14 @@ class DimensionSliceControl(QWidget):
 
     def get_slice(self) -> tuple[int, int]:
         """Return the current (min, max) slice values as integers."""
-        val = self.range_slider.value()
+        val = self.range_slider.values
         return (int(val[0]), int(val[1]) + 1)
 
     def set_dim_info(self, dim_size: int, dim_name: str = ""):
         """Update dimension size and name."""
         self.dim_size = dim_size
-        self.range_slider.setRange(0, dim_size - 1)
-        self.range_slider.setValue((0, dim_size - 1))
+        self.range_slider.data_range = (0, dim_size - 1)
+        self.range_slider.set_values((0, dim_size - 1))
         self.size_label.setText(f"[{dim_size}]")
         if dim_name:
             self.label.setText(dim_name)
@@ -84,8 +72,8 @@ class DimensionSliceControl(QWidget):
     def set_dim_info(self, dim_size: int, dim_name: str = ""):
         """Update dimension size and name."""
         self.dim_size = dim_size
-        self.range_slider.setRange(0, dim_size - 1)
-        self.range_slider.setValue((0, dim_size - 1))
+        self.range_slider.data_range = (0, dim_size - 1)
+        self.range_slider.set_values((0, dim_size - 1))
         self.size_label.setText(f"[{dim_size}]")
         if dim_name:
             self.label.setText(dim_name)
@@ -328,7 +316,7 @@ class SliceAnythingWidget(QWidget):
 
         shape = self._current_layer.data.shape
         for control, size in zip(self._dim_controls, shape):
-            control.range_slider.setValue((0, size - 1))
+            control.range_slider.set_values((0, size - 1))
 
     def _toggle_draw_box(self):
         """Toggle crop box drawing mode."""
@@ -499,11 +487,11 @@ class SliceAnythingWidget(QWidget):
             if len(spatial_controls) >= 2:
                 # Apply to X dimension (second to last)
                 x_control = spatial_controls[-2]
-                x_control.range_slider.setValue((min_x, max_x))
+                x_control.range_slider.set_values((min_x, max_x))
                 
                 # Apply to Y dimension (last)
                 y_control = spatial_controls[-1]
-                y_control.range_slider.setValue((min_y, max_y))
+                y_control.range_slider.set_values((min_y, max_y))
                 
                 print(f"Crop box applied: X=[{min_x}, {max_x}], Y=[{min_y}, {max_y}]")
                 print(f"Updated sliders: {x_control.label.text()} and {y_control.label.text()}")
