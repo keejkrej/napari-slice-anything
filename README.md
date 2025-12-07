@@ -1,6 +1,6 @@
 # napari-slice-anything
 
-[![License BSD-3](https://img.shields.io/pypi/l/napari-slice-anything.svg?color=green)](https://github.com/jack/napari-slice-anything/raw/main/LICENSE)
+[![License BSD-3](https://img.shields.io/pypi/l/napari-slice-anything.svg?color=green)](https://github.com/keejkrej/napari-slice-anything/raw/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/napari-slice-anything.svg?color=green)](https://pypi.org/project/napari-slice-anything)
 [![Python Version](https://img.shields.io/pypi/pyversions/napari-slice-anything.svg?color=green)](https://python.org)
 [![napari hub](https://img.shields.io/endpoint?url=https://api.napari-hub.org/shields/napari-slice-anything)](https://napari-hub.org/plugins/napari-slice-anything)

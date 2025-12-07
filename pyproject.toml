@@ -47,8 +47,8 @@ dev = [
 napari-slice-anything = "napari_slice_anything:napari.yaml"
 
 [project.urls]
-"Bug Tracker" = "https://github.com/jack/napari-slice-anything/issues"
-"Source Code" = "https://github.com/jack/napari-slice-anything"
+"Bug Tracker" = "https://github.com/keejkrej/napari-slice-anything/issues"
+"Source Code" = "https://github.com/keejkrej/napari-slice-anything"
 
 [tool.setuptools.packages.find]
 where = ["src"]
