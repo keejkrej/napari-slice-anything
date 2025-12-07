@@ -320,11 +320,18 @@ class SliceAnythingWidget(QWidget):
             QMessageBox.warning(self, "Warning", "No data to save - slice is empty")
             return
         
+        # Create a smart default filename based on original layer name
+        original_name = self._current_layer.name
+        if original_name.endswith('_sliced'):
+            base_name = original_name  # Don't double-add _sliced suffix
+        else:
+            base_name = f"{original_name}_sliced"
+        
         # Ask user for save location
         file_path, file_ext = QFileDialog.getSaveFileName(
             self,
             "Save Sliced Data",
-            f"{self._current_layer.name}_sliced.npy",
+            base_name,
             "NumPy Array (*.npy);;TIFF Images (*.tiff *.tif);;All Files (*)"
         )
         
