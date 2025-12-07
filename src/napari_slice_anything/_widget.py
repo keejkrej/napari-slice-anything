@@ -3,7 +3,7 @@
 from typing import Optional
 
 import numpy as np
-from qtpy.QtCore import Qt, Signal
+from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QComboBox,
     QFormLayout,
@@ -30,24 +30,41 @@ class DimensionSliceControl(QWidget):
         self.dim_size = dim_size
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)  # Reduced margins to prevent clipping
+        layout.setContentsMargins(4, 2, 4, 2)  # Increased margins to prevent clipping
 
         self.label = QLabel(dim_name or f"Dim {dim_index}")
-        self.label.setMinimumWidth(70)
-        self.label.setMaximumWidth(100)  # Increased to prevent clipping
+        self.label.setMinimumWidth(80)
+        self.label.setMaximumWidth(120)  # Increased to prevent clipping
         layout.addWidget(self.label)
 
         self.range_slider = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
-        self.range_slider.setRange(0, dim_size - 1)  # Use integers
-        self.range_slider.setValue((0, dim_size - 1))  # Use integers
-        self.range_slider.setDecimals(0)  # Show integers, no decimals
-        self.range_slider.setSingleStep(1)  # Step by 1 for integer values
+        self.range_slider.setRange(0, dim_size - 1)
+        self.range_slider.setValue((0, dim_size - 1))
+        self.range_slider.setDecimals(0)  # Force integer display
+        
+        # Set proper step for integers
+        self.range_slider.setSingleStep(1)
+        
         layout.addWidget(self.range_slider, stretch=1)
 
         self.size_label = QLabel(f"[{dim_size}]")
-        self.size_label.setMinimumWidth(60)
-        self.size_label.setMaximumWidth(80)  # Increased to prevent clipping
+        self.size_label.setMinimumWidth(70)
+        self.size_label.setMaximumWidth(90)  # Increased to prevent clipping
         layout.addWidget(self.size_label)
+
+    def get_slice(self) -> tuple[int, int]:
+        """Return the current (min, max) slice values as integers."""
+        val = self.range_slider.value()
+        return (int(val[0]), int(val[1]) + 1)
+
+    def set_dim_info(self, dim_size: int, dim_name: str = ""):
+        """Update dimension size and name."""
+        self.dim_size = dim_size
+        self.range_slider.setRange(0, dim_size - 1)
+        self.range_slider.setValue((0, dim_size - 1))
+        self.size_label.setText(f"[{dim_size}]")
+        if dim_name:
+            self.label.setText(dim_name)
 
     def get_slice(self) -> tuple[int, int]:
         """Return the current (min, max) slice values as integers."""
