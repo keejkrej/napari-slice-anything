@@ -252,17 +252,18 @@ class SliceAnythingWidget(QWidget):
                 
                 # Try to get the original layer's source info
                 original_source = getattr(self._current_layer, '_source', None)
-                if original_source is not None:
+                if original_source is not None and hasattr(original_source, 'path') and original_source.path is not None:
                     # Copy structure from original but mark as plugin-created
+                    # Only copy path if it's a valid file path
                     new_layer._source = Source(
-                        path=getattr(original_source, 'path', None),
+                        path=original_source.path,  # Keep original path if valid
                         reader_plugin=getattr(original_source, 'reader_plugin', 'napari'),
                         plugin='napari-slice-anything'
                     )
                 else:
-                    # Create minimal source structure
+                    # Create source without path - let save system handle new file creation
                     new_layer._source = Source(
-                        path=None,
+                        path=None,  # No path - this will trigger new file save dialog
                         reader_plugin='napari',
                         plugin='napari-slice-anything'
                     )
