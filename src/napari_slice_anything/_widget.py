@@ -13,14 +13,11 @@ from qtpy.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QWidget,
-    QFileDialog,
-    QMessageBox,
 )
 from superqt import QLabeledDoubleRangeSlider
 
 import napari
 from napari.layers import Image
-import os
 
 
 class DimensionSliceControl(QWidget):
@@ -32,20 +29,23 @@ class DimensionSliceControl(QWidget):
         self.dim_size = dim_size
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(2, 2, 2, 2)  # Reduced margins to prevent clipping
 
         self.label = QLabel(dim_name or f"Dim {dim_index}")
         self.label.setMinimumWidth(60)
+        self.label.setMaximumWidth(80)  # Set max width to prevent clipping
         layout.addWidget(self.label)
 
         self.range_slider = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
-        self.range_slider.setRange(0, dim_size - 1)
-        self.range_slider.setValue((0, dim_size - 1))
-        self.range_slider.setDecimals(0)
+        self.range_slider.setRange(0.0, float(dim_size - 1))
+        self.range_slider.setValue((0.0, float(dim_size - 1)))
+        self.range_slider.setDecimals(0)  # Show integers, no decimals
+        self.range_slider.setSingleStep(1.0)  # Step by 1 for integer values
         layout.addWidget(self.range_slider, stretch=1)
 
         self.size_label = QLabel(f"[{dim_size}]")
         self.size_label.setMinimumWidth(50)
+        self.size_label.setMaximumWidth(70)  # Set max width to prevent clipping
         layout.addWidget(self.size_label)
 
     def get_slice(self) -> tuple[int, int]:
@@ -103,11 +103,6 @@ class SliceAnythingWidget(QWidget):
         self.reset_btn = QPushButton("Reset")
         self.reset_btn.setEnabled(False)
         button_layout.addWidget(self.reset_btn)
-        
-        self.save_btn = QPushButton("Save Sliced Layer")
-        self.save_btn.setEnabled(False)
-        self.save_btn.setToolTip("Save the currently sliced layer directly")
-        button_layout.addWidget(self.save_btn)
 
         layout.addLayout(button_layout)
         layout.addStretch()
@@ -118,7 +113,6 @@ class SliceAnythingWidget(QWidget):
         self.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
         self.apply_btn.clicked.connect(self._apply_slice)
         self.reset_btn.clicked.connect(self._reset_sliders)
-        self.save_btn.clicked.connect(self._save_sliced_layer)
 
         self.viewer.layers.events.inserted.connect(self._update_layer_combo)
         self.viewer.layers.events.removed.connect(self._update_layer_combo)
@@ -152,7 +146,6 @@ class SliceAnythingWidget(QWidget):
             self.shape_label.setText("No layer selected")
             self.apply_btn.setEnabled(False)
             self.reset_btn.setEnabled(False)
-            self.save_btn.setEnabled(False)
             return
 
         self._current_layer = self.layer_combo.itemData(index)
@@ -164,7 +157,6 @@ class SliceAnythingWidget(QWidget):
         self._setup_dim_controls(shape)
         self.apply_btn.setEnabled(True)
         self.reset_btn.setEnabled(True)
-        self.save_btn.setEnabled(True)
 
     def _clear_dim_controls(self):
         """Remove all dimension controls."""
@@ -289,87 +281,6 @@ class SliceAnythingWidget(QWidget):
                 metadata={'sliced_by': 'napari-slice-anything'}
             )
 
-    def _save_sliced_layer(self):
-        """Save the sliced data directly using numpy file I/O."""
-        if self._current_layer is None:
-            return
-            
-        # Get current slice configuration
-        slices = []
-        for control in self._dim_controls:
-            start, stop = control.get_slice()
-            slices.append(slice(start, stop))
-        
-        sliced_data = self._current_layer.data[tuple(slices)]
-        
-        if sliced_data.size == 0:
-            QMessageBox.warning(self, "Warning", "No data to save - slice is empty")
-            return
-        
-        # Create a smart default filename based on original layer name
-        original_name = self._current_layer.name
-        if original_name.endswith('_sliced'):
-            base_name = original_name  # Don't double-add _sliced suffix
-        else:
-            base_name = f"{original_name}_sliced"
-        
-        # Ask user for save location
-        file_path, file_ext = QFileDialog.getSaveFileName(
-            self,
-            "Save Sliced Data",
-            base_name,
-            "NumPy Array (*.npy);;TIFF Images (*.tiff *.tif);;All Files (*)"
-        )
-        
-        if not file_path:
-            return  # User cancelled
-            
-        try:
-            if file_path.endswith(('.npy', '.npz')):
-                # Save as numpy array
-                np.save(file_path, sliced_data)
-                QMessageBox.information(self, "Success", f"Saved sliced data to {file_path}")
-                
-            elif file_path.endswith(('.tiff', '.tif')):
-                # Save as TIFF using imageio
-                import imageio.v3 as iio
-                # For multi-dimensional data, save as individual slices or use compression
-                if len(sliced_data.shape) > 2:
-                    # Handle multi-dimensional data
-                    if len(sliced_data.shape) == 3:
-                        # 3D data - save as multi-page TIFF
-                        iio.imwrite(file_path, sliced_data)
-                    else:
-                        # Higher dimensions - flatten and save
-                        # Take first 2D slice for demonstration
-                        if sliced_data.dtype == np.complex64 or sliced_data.dtype == np.complex128:
-                            # Handle complex data by taking magnitude
-                            data_to_save = np.abs(sliced_data)
-                        else:
-                            data_to_save = sliced_data
-                        iio.imwrite(file_path, data_to_save.astype(np.float32))
-                else:
-                    # 2D data
-                    if sliced_data.dtype == np.complex64 or sliced_data.dtype == np.complex128:
-                        data_to_save = np.abs(sliced_data)
-                    else:
-                        data_to_save = sliced_data
-                    iio.imwrite(file_path, data_to_save)
-                    
-                QMessageBox.information(self, "Success", f"Saved sliced data to {file_path}")
-                
-            else:
-                # Default to numpy format
-                if not file_path.endswith('.npy'):
-                    file_path += '.npy'
-                np.save(file_path, sliced_data)
-                QMessageBox.information(self, "Success", f"Saved sliced data to {file_path}")
-                
-        except Exception as e:
-            error_msg = f"Failed to save data: {str(e)}"
-            QMessageBox.critical(self, "Error", error_msg)
-            print(error_msg)
-            
     def _reset_sliders(self):
         """Reset all sliders to full range."""
         if self._current_layer is None:
@@ -377,4 +288,4 @@ class SliceAnythingWidget(QWidget):
 
         shape = self._current_layer.data.shape
         for control, size in zip(self._dim_controls, shape):
-            control.range_slider.setValue((0, size - 1))
+            control.range_slider.setValue((0.0, float(size - 1)))
