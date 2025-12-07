@@ -250,27 +250,13 @@ class SliceAnythingWidget(QWidget):
                 # Create a proper source object that mimics a file-loaded layer
                 from napari.layers._source import Source
                 
-                # Try to get the original layer's source info
-                original_source = getattr(self._current_layer, '_source', None)
-                if original_source is not None and hasattr(original_source, 'path') and original_source.path is not None:
-                    # Create a derived filename for the sliced version
-                    import os
-                    original_path = original_source.path
-                    base_name, ext = os.path.splitext(original_path)
-                    sliced_path = f"{base_name}_sliced{ext}"
-                    
-                    new_layer._source = Source(
-                        path=sliced_path,  # Derived path for sliced version
-                        reader_plugin=getattr(original_source, 'reader_plugin', 'napari'),
-                        plugin='napari-slice-anything'
-                    )
-                else:
-                    # Create source with a generic sliced filename
-                    new_layer._source = Source(
-                        path=None,  # Let save system determine appropriate name
-                        reader_plugin='napari',
-                        plugin='napari-slice-anything'
-                    )
+                # For sliced layers, we let the user choose the filename in the save dialog
+                # So we don't set a hardcoded path here
+                new_layer._source = Source(
+                    path=None,  # Let user choose filename in save dialog
+                    reader_plugin='napari',
+                    plugin='napari-slice-anything'
+                )
                 
                 # Add metadata that helps with saving
                 new_layer.metadata.update({
