@@ -45,6 +45,16 @@ class DimensionSliceControl(QWidget):
         # Set proper step for integers
         self.range_slider.setSingleStep(1)
         
+        # Apply custom styling to force integer display
+        self.range_slider.setStyleSheet("""
+            QLabeledDoubleRangeSlider {
+                font-size: 10px;
+            }
+            QLabeledDoubleRangeSlider QLabel {
+                font-weight: bold;
+            }
+        """)
+        
         layout.addWidget(self.range_slider, stretch=1)
 
         self.size_label = QLabel(f"[{dim_size}]")
