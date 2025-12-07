@@ -10,6 +10,7 @@ from qtpy.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -37,12 +38,45 @@ class DimensionSliceControl(QWidget):
         self.label.setMaximumWidth(120)  # Increased to prevent clipping
         layout.addWidget(self.label)
 
+        # Custom text displays for clean integer values
+        self.min_edit = QLineEdit()
+        self.max_edit = QLineEdit()
+        
+        for edit in [self.min_edit, self.max_edit]:
+            edit.setMaximumWidth(50)
+            edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            edit.setStyleSheet("""
+                QLineEdit {
+                    border: 1px solid gray;
+                    padding: 2px;
+                    background: white;
+                    font-weight: bold;
+                    font-size: 10px;
+                }
+            """)
+            edit.textChanged.connect(self._on_text_changed)
+        
+        self.min_edit.setText("0")
+        self.max_edit.setText(str(dim_size - 1))
+        
+        # Keep superqt slider but don't show its labels
         self.range_slider = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
         self.range_slider.setRange(0, dim_size - 1)
         self.range_slider.setValue((0, dim_size - 1))
-        self.range_slider.setDecimals(0)  # Back to 0 decimals since the method works
-        self.range_slider.setSingleStep(1)  # Force integer step
+        self.range_slider.setDecimals(0)
+        self.range_slider.setSingleStep(1)
+        self.range_slider.valueChanged.connect(self._on_slider_changed)
         
+        # Hide superqt's text labels
+        self.range_slider.setStyleSheet("""
+            QLabeledDoubleRangeSlider QLabel {
+                color: transparent;
+            }
+        """)
+        
+        layout.addWidget(self.min_edit)
+        layout.addWidget(QLabel("to"))
+        layout.addWidget(self.max_edit)
         layout.addWidget(self.range_slider, stretch=1)
 
         self.size_label = QLabel(f"[{dim_size}]")
@@ -50,16 +84,42 @@ class DimensionSliceControl(QWidget):
         self.size_label.setMaximumWidth(90)  # Increased to prevent clipping
         layout.addWidget(self.size_label)
 
+    def _on_slider_changed(self, values):
+        """Update text boxes when slider changes."""
+        min_val, max_val = values
+        self.min_edit.setText(str(int(min_val)))
+        self.max_edit.setText(str(int(max_val)))
+        
+    def _on_text_changed(self):
+        """Update slider when text boxes change."""
+        try:
+            min_val = int(self.min_edit.text()) if self.min_edit.text() else 0
+            max_val = int(self.max_edit.text()) if self.max_edit.text() else self.dim_size - 1
+            
+            # Ensure valid range
+            min_val = max(0, min(min_val, self.dim_size - 1))
+            max_val = max(0, min(max_val, self.dim_size - 1))
+            
+            if min_val <= max_val:
+                self.range_slider.setValue((min_val, max_val))
+        except ValueError:
+            pass  # Ignore invalid text input
+        
     def get_slice(self) -> tuple[int, int]:
         """Return the current (min, max) slice values as integers."""
-        val = self.range_slider.value()
-        return (int(val[0]), int(val[1]) + 1)
+        try:
+            min_val = int(self.min_edit.text()) if self.min_edit.text() else 0
+            max_val = int(self.max_edit.text()) if self.max_edit.text() else self.dim_size - 1
+            return (min_val, max_val + 1)
+        except ValueError:
+            return (0, self.dim_size)
 
     def set_dim_info(self, dim_size: int, dim_name: str = ""):
         """Update dimension size and name."""
         self.dim_size = dim_size
         self.range_slider.setRange(0, dim_size - 1)
         self.range_slider.setValue((0, dim_size - 1))
+        self.max_edit.setText(str(dim_size - 1))
         self.size_label.setText(f"[{dim_size}]")
         if dim_name:
             self.label.setText(dim_name)
